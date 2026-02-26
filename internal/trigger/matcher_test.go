@@ -395,3 +395,174 @@ func TestExtractTag(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchCommitTrigger(t *testing.T) {
+	tests := []struct {
+		name    string
+		trigger *schema.CommitTrigger
+		event   *schema.CommitEvent
+		want    bool
+	}{
+		{
+			name: "match path pattern",
+			trigger: &schema.CommitTrigger{
+				Paths: []string{"src/**/*.go"},
+			},
+			event: &schema.CommitEvent{
+				SHA:     "abc123",
+				Message: "feat: add feature",
+				Files: []schema.FileStatus{
+					{Path: "src/main.go", Status: "modified"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "no match path pattern",
+			trigger: &schema.CommitTrigger{
+				Paths: []string{"src/**/*.ts"},
+			},
+			event: &schema.CommitEvent{
+				SHA:     "abc123",
+				Message: "feat: add feature",
+				Files: []schema.FileStatus{
+					{Path: "src/main.go", Status: "modified"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "path ignore",
+			trigger: &schema.CommitTrigger{
+				PathsIgnore: []string{"**/*_test.go"},
+			},
+			event: &schema.CommitEvent{
+				SHA:     "abc123",
+				Message: "test: add tests",
+				Files: []schema.FileStatus{
+					{Path: "src/main_test.go", Status: "added"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "multiple files - one matches",
+			trigger: &schema.CommitTrigger{
+				Paths: []string{"**/*.go"},
+			},
+			event: &schema.CommitEvent{
+				SHA:     "abc123",
+				Message: "refactor",
+				Files: []schema.FileStatus{
+					{Path: "src/main.go", Status: "modified"},
+					{Path: "README.md", Status: "modified"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "empty trigger matches all",
+			trigger: &schema.CommitTrigger{},
+			event: &schema.CommitEvent{
+				SHA:     "abc123",
+				Message: "any commit",
+				Files: []schema.FileStatus{
+					{Path: "anything.txt", Status: "added"},
+				},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workflow := &schema.Workflow{
+				On: schema.OnConfig{
+					Commit: tt.trigger,
+				},
+			}
+			matcher := NewMatcher(workflow)
+			event := &schema.Event{
+				Commit: tt.event,
+			}
+			if got := matcher.Match(event); got != tt.want {
+				t.Errorf("Match() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMatchToolsArray(t *testing.T) {
+	tests := []struct {
+		name     string
+		triggers []schema.ToolTrigger
+		event    *schema.ToolEvent
+		want     bool
+	}{
+		{
+			name: "match first tool",
+			triggers: []schema.ToolTrigger{
+				{Name: "edit"},
+				{Name: "create"},
+			},
+			event: &schema.ToolEvent{
+				Name: "edit",
+				Args: map[string]interface{}{},
+			},
+			want: true,
+		},
+		{
+			name: "match second tool",
+			triggers: []schema.ToolTrigger{
+				{Name: "edit"},
+				{Name: "create"},
+			},
+			event: &schema.ToolEvent{
+				Name: "create",
+				Args: map[string]interface{}{},
+			},
+			want: true,
+		},
+		{
+			name: "no match any tool",
+			triggers: []schema.ToolTrigger{
+				{Name: "edit"},
+				{Name: "create"},
+			},
+			event: &schema.ToolEvent{
+				Name: "powershell",
+				Args: map[string]interface{}{},
+			},
+			want: false,
+		},
+		{
+			name: "match with args pattern",
+			triggers: []schema.ToolTrigger{
+				{Name: "edit", Args: map[string]string{"path": "src/**"}},
+				{Name: "create", Args: map[string]string{"path": "tests/**"}},
+			},
+			event: &schema.ToolEvent{
+				Name: "create",
+				Args: map[string]interface{}{"path": "tests/new_test.go"},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workflow := &schema.Workflow{
+				On: schema.OnConfig{
+					Tools: tt.triggers,
+				},
+			}
+			matcher := NewMatcher(workflow)
+			event := &schema.Event{
+				Tool: tt.event,
+			}
+			if got := matcher.Match(event); got != tt.want {
+				t.Errorf("Match() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

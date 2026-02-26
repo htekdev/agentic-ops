@@ -53,19 +53,48 @@ if ($toolArgs -is [string]) {
     }
 }
 
+# Convert PSCustomObject to hashtable for proper JSON serialization
+function ConvertTo-Hashtable($obj) {
+    if ($obj -is [System.Collections.IDictionary]) {
+        return $obj
+    }
+    if ($obj -is [PSCustomObject]) {
+        $ht = @{}
+        foreach ($prop in $obj.PSObject.Properties) {
+            $ht[$prop.Name] = ConvertTo-Hashtable $prop.Value
+        }
+        return $ht
+    }
+    return $obj
+}
+
+$toolArgsHt = ConvertTo-Hashtable $toolArgs
+
+# Normalize path to relative path from cwd (Copilot passes absolute paths)
+if ($toolArgsHt.path -and $sessionCwd) {
+    $absPath = $toolArgsHt.path
+    if ([System.IO.Path]::IsPathRooted($absPath)) {
+        $cwdNorm = $sessionCwd -replace '\\', '/'
+        $pathNorm = $absPath -replace '\\', '/'
+        if ($pathNorm.StartsWith($cwdNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $toolArgsHt.path = $pathNorm.Substring($cwdNorm.Length).TrimStart('/')
+        }
+    }
+}
+
 # Build event JSON for the CLI
 $event = @{
     hook = @{
         type = "preToolUse"
         tool = @{
             name = $toolName
-            args = $toolArgs
+            args = $toolArgsHt
         }
         cwd = $sessionCwd
     }
     tool = @{
         name = $toolName
-        args = $toolArgs
+        args = $toolArgsHt
         hook_type = "preToolUse"
     }
     cwd = $sessionCwd
