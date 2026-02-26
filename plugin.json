@@ -1,0 +1,14 @@
+{
+  "name": "agentic-ops",
+  "description": "Local workflow engine for agentic DevOps - execute GitHub Actions-like workflows triggered by Copilot agent hooks",
+  "version": "0.1.0",
+  "author": {
+    "name": "htekdev",
+    "url": "https://github.com/htekdev"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/htekdev/agentic-ops",
+  "keywords": ["agentic", "devops", "workflows", "hooks", "automation", "governance"],
+  "skills": "skills/",
+  "hooks": "packages/hooks/hooks.json"
+}

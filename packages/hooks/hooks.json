@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "./packages/hooks/scripts/pre-tool-use.sh",
+        "powershell": "powershell -ExecutionPolicy Bypass -File packages/hooks/scripts/pre-tool-use.ps1",
+        "timeoutSec": 60
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "./packages/hooks/scripts/post-tool-use.sh",
+        "powershell": "powershell -ExecutionPolicy Bypass -File packages/hooks/scripts/post-tool-use.ps1",
+        "timeoutSec": 60
+      }
+    ]
+  }
+}
