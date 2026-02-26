@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/htekdev/agentic-ops/internal/runner"
 	"github.com/htekdev/agentic-ops/internal/schema"
+	"github.com/htekdev/agentic-ops/internal/trigger"
 	"github.com/spf13/cobra"
 )
 
@@ -192,11 +196,214 @@ func runWorkflow(dir, workflowName string) error {
 }
 
 // runMatchingWorkflows discovers and runs all matching workflows
-func runMatchingWorkflows(dir, event string) error {
-	// For now, just return allow
-	// TODO: Implement workflow discovery and matching
-	result := schema.NewAllowResult()
-	return outputWorkflowResult(result)
+func runMatchingWorkflows(dir, eventStr string) error {
+	// Parse the event
+	var eventData map[string]interface{}
+	
+	// Handle stdin input
+	if eventStr == "-" {
+		input, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("failed to read stdin: %w", err)
+		}
+		eventStr = string(input)
+	}
+	
+	if eventStr == "" {
+		// No event provided, allow by default
+		result := schema.NewAllowResult()
+		return outputWorkflowResult(result)
+	}
+	
+	if err := json.Unmarshal([]byte(eventStr), &eventData); err != nil {
+		return fmt.Errorf("failed to parse event JSON: %w", err)
+	}
+	
+	// Convert to Event struct
+	event := parseEventData(eventData)
+	
+	// Discover workflows
+	workflowDir := filepath.Join(dir, ".github", "agent-workflows")
+	if _, err := os.Stat(workflowDir); os.IsNotExist(err) {
+		// No workflows directory, allow by default
+		result := schema.NewAllowResult()
+		return outputWorkflowResult(result)
+	}
+	
+	// Find all workflow files
+	var workflowFiles []string
+	err := filepath.Walk(workflowDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".yml" || ext == ".yaml" {
+			workflowFiles = append(workflowFiles, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan workflows: %w", err)
+	}
+	
+	if len(workflowFiles) == 0 {
+		// No workflows found, allow by default
+		result := schema.NewAllowResult()
+		return outputWorkflowResult(result)
+	}
+	
+	// Load and match workflows
+	var matchingWorkflows []*schema.Workflow
+	for _, path := range workflowFiles {
+		wf, err := schema.LoadWorkflow(path)
+		if err != nil {
+			// Skip invalid workflows
+			continue
+		}
+		
+		// Check if workflow matches the event
+		matcher := trigger.NewMatcher(wf)
+		if matcher.Match(event) {
+			matchingWorkflows = append(matchingWorkflows, wf)
+		}
+	}
+	
+	if len(matchingWorkflows) == 0 {
+		// No matching workflows, allow by default
+		result := schema.NewAllowResult()
+		return outputWorkflowResult(result)
+	}
+	
+	// Run matching workflows
+	ctx := context.Background()
+	var finalResult *schema.WorkflowResult
+	
+	for _, wf := range matchingWorkflows {
+		r := runner.NewRunner(wf, event, dir)
+		result := r.RunWithBlocking(ctx)
+		
+		// If any workflow denies, the final result is deny
+		if result.Decision == "deny" {
+			return outputWorkflowResult(result)
+		}
+		
+		// Keep the last allow result
+		finalResult = result
+	}
+	
+	if finalResult == nil {
+		finalResult = schema.NewAllowResult()
+	}
+	
+	return outputWorkflowResult(finalResult)
+}
+
+// parseEventData converts raw event data to a schema.Event
+func parseEventData(data map[string]interface{}) *schema.Event {
+	event := &schema.Event{}
+	
+	// Parse hook event
+	if hookData, ok := data["hook"].(map[string]interface{}); ok {
+		event.Hook = &schema.HookEvent{}
+		if t, ok := hookData["type"].(string); ok {
+			event.Hook.Type = t
+		}
+		if cwd, ok := hookData["cwd"].(string); ok {
+			event.Hook.Cwd = cwd
+		}
+		if toolData, ok := hookData["tool"].(map[string]interface{}); ok {
+			event.Hook.Tool = &schema.ToolEvent{}
+			if name, ok := toolData["name"].(string); ok {
+				event.Hook.Tool.Name = name
+			}
+			if args, ok := toolData["args"].(map[string]interface{}); ok {
+				event.Hook.Tool.Args = args
+			}
+		}
+	}
+	
+	// Parse tool event
+	if toolData, ok := data["tool"].(map[string]interface{}); ok {
+		event.Tool = &schema.ToolEvent{}
+		if name, ok := toolData["name"].(string); ok {
+			event.Tool.Name = name
+		}
+		if args, ok := toolData["args"].(map[string]interface{}); ok {
+			event.Tool.Args = args
+		}
+		if hookType, ok := toolData["hook_type"].(string); ok {
+			event.Tool.HookType = hookType
+		}
+	}
+	
+	// Parse file event
+	if fileData, ok := data["file"].(map[string]interface{}); ok {
+		event.File = &schema.FileEvent{}
+		if p, ok := fileData["path"].(string); ok {
+			event.File.Path = p
+		}
+		if a, ok := fileData["action"].(string); ok {
+			event.File.Action = a
+		}
+		if c, ok := fileData["content"].(string); ok {
+			event.File.Content = c
+		}
+	}
+	
+	// Parse commit event
+	if commitData, ok := data["commit"].(map[string]interface{}); ok {
+		event.Commit = &schema.CommitEvent{}
+		if sha, ok := commitData["sha"].(string); ok {
+			event.Commit.SHA = sha
+		}
+		if msg, ok := commitData["message"].(string); ok {
+			event.Commit.Message = msg
+		}
+		if author, ok := commitData["author"].(string); ok {
+			event.Commit.Author = author
+		}
+		if files, ok := commitData["files"].([]interface{}); ok {
+			for _, f := range files {
+				if fm, ok := f.(map[string]interface{}); ok {
+					fs := schema.FileStatus{}
+					if p, ok := fm["path"].(string); ok {
+						fs.Path = p
+					}
+					if s, ok := fm["status"].(string); ok {
+						fs.Status = s
+					}
+					event.Commit.Files = append(event.Commit.Files, fs)
+				}
+			}
+		}
+	}
+	
+	// Parse push event
+	if pushData, ok := data["push"].(map[string]interface{}); ok {
+		event.Push = &schema.PushEvent{}
+		if ref, ok := pushData["ref"].(string); ok {
+			event.Push.Ref = ref
+		}
+		if before, ok := pushData["before"].(string); ok {
+			event.Push.Before = before
+		}
+		if after, ok := pushData["after"].(string); ok {
+			event.Push.After = after
+		}
+	}
+	
+	// Parse top-level cwd and timestamp
+	if cwd, ok := data["cwd"].(string); ok {
+		event.Cwd = cwd
+	}
+	if ts, ok := data["timestamp"].(string); ok {
+		event.Timestamp = ts
+	}
+	
+	return event
 }
 
 // findWorkflowFile finds a workflow file by name
