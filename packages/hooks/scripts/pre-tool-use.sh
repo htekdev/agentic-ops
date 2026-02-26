@@ -100,8 +100,8 @@ if [[ "$TOOL_NAME" == "powershell" ]] || [[ "$TOOL_NAME" == "bash" ]] || [[ "$TO
   COMMAND=$(echo "$TOOL_ARGS" | jq -r '.command // .script // .code // empty')
   
   if [ -n "$COMMAND" ]; then
-    # Detect git commit
-    if echo "$COMMAND" | grep -qE '\bgit\s+(commit|ci)\b'; then
+    # Detect git commit - pattern handles git with flags like -C, --no-pager, etc.
+    if echo "$COMMAND" | grep -qE 'git\b.*\bcommit\b'; then
       cd "$SESSION_CWD" 2>/dev/null || true
       
       # Get staged files
@@ -155,17 +155,17 @@ if [[ "$TOOL_NAME" == "powershell" ]] || [[ "$TOOL_NAME" == "bash" ]] || [[ "$TO
         '{sha: $sha, message: $message, author: $author, branch: $branch, files: $files}')
     fi
     
-    # Detect git push
-    if echo "$COMMAND" | grep -qE '\bgit\s+push\b'; then
+    # Detect git push - pattern handles git with flags like -C, --no-pager, etc.
+    if echo "$COMMAND" | grep -qE 'git\b.*\bpush\b'; then
       cd "$SESSION_CWD" 2>/dev/null || true
       
       BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
       REF="refs/heads/$BRANCH"
       
       # Check for tag push
-      if echo "$COMMAND" | grep -qE '\bgit\s+push\s+.*--tags\b'; then
+      if echo "$COMMAND" | grep -qE 'git\b.*\bpush\b.*--tags\b'; then
         REF="refs/tags/latest"
-      elif TAG=$(echo "$COMMAND" | grep -oP '(?<=git\s+push\s+origin\s+)(v[\d\.]+)' 2>/dev/null); then
+      elif TAG=$(echo "$COMMAND" | grep -oP '(?<=push\b.*\borigin\s+)(v[\d\.]+)' 2>/dev/null); then
         REF="refs/tags/$TAG"
       fi
       
