@@ -286,7 +286,7 @@ func runMatchingWorkflows(dir, eventStr string) error {
 		result := r.RunWithBlocking(ctx)
 		
 		// If any workflow denies, the final result is deny
-		if result.Decision == "deny" {
+		if result.PermissionDecision == "deny" {
 			return outputWorkflowResult(result)
 		}
 		
