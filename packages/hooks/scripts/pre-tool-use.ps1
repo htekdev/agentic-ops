@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 # Resolve plugin root
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PluginRoot = (Resolve-Path (Join-Path $ScriptDir "..\..\..")).Path
+$BinDir = Join-Path $PluginRoot "bin"
 
 # Detect OS and architecture
 $Arch = if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -eq "Arm64") {
@@ -20,16 +21,14 @@ $BinName = if ($IsWindows -or $env:OS -match "Windows") {
     "agentic-ops-linux-$Arch"
 }
 
-$CLI = Join-Path (Join-Path $PluginRoot "bin") $BinName
+$CLI = Join-Path $BinDir $BinName
+$InstallScript = Join-Path $ScriptDir "install-cli.ps1"
 
 # Check if CLI exists, auto-install if missing
 if (-not (Test-Path $CLI)) {
     try {
-        # Run the install script
-        $InstallScript = Join-Path (Join-Path (Join-Path $PluginRoot "packages") "hooks") "scripts"
-        $InstallScript = Join-Path $InstallScript "install-cli.ps1"
         if (Test-Path $InstallScript) {
-            & $InstallScript -Version "latest" -DestDir (Join-Path $PluginRoot "bin") 2>&1 | Out-Null
+            & $InstallScript -Version "latest" -DestDir $BinDir 2>&1 | Out-Null
         }
     } catch {
         # Install failed, allow by default
@@ -39,9 +38,33 @@ if (-not (Test-Path $CLI)) {
     
     # Check again after install
     if (-not (Test-Path $CLI)) {
-        # Still missing, allow by default
         Write-Output '{"permissionDecision":"allow"}'
         exit 0
+    }
+} else {
+    # CLI exists - check for updates periodically (once per hour)
+    $LastCheckFile = Join-Path $BinDir ".last-update-check"
+    $ShouldCheck = $true
+    
+    if (Test-Path $LastCheckFile) {
+        $LastCheck = Get-Item $LastCheckFile
+        $HoursSinceCheck = ((Get-Date) - $LastCheck.LastWriteTime).TotalHours
+        $ShouldCheck = ($HoursSinceCheck -ge 1)
+    }
+    
+    if ($ShouldCheck) {
+        try {
+            # Update timestamp first to prevent multiple checks
+            "" | Out-File -FilePath $LastCheckFile -NoNewline
+            
+            # Check for updates in background (don't block the hook)
+            Start-Job -ScriptBlock {
+                param($Script, $Dir)
+                & $Script -Version "latest" -DestDir $Dir 2>&1 | Out-Null
+            } -ArgumentList $InstallScript, $BinDir | Out-Null
+        } catch {
+            # Ignore update check errors
+        }
     }
 }
 

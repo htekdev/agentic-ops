@@ -4,6 +4,7 @@ set -e
 # Resolve plugin root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+BIN_DIR="$PLUGIN_ROOT/bin"
 
 # Detect OS and architecture
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -11,14 +12,16 @@ ARCH="$(uname -m)"
 
 case "$OS" in
   darwin)
-    if [ "$ARCH" = "arm64" ]; then
-      BIN_NAME="agentic-ops-darwin-arm64"
-    else
-      BIN_NAME="agentic-ops-darwin-amd64"
-    fi
+    case "$ARCH" in
+      arm64|aarch64) BIN_NAME="agentic-ops-darwin-arm64" ;;
+      *) BIN_NAME="agentic-ops-darwin-amd64" ;;
+    esac
     ;;
   linux)
-    BIN_NAME="agentic-ops-linux-amd64"
+    case "$ARCH" in
+      arm64|aarch64) BIN_NAME="agentic-ops-linux-arm64" ;;
+      *) BIN_NAME="agentic-ops-linux-amd64" ;;
+    esac
     ;;
   *)
     # Unknown OS, allow by default
@@ -27,19 +30,40 @@ case "$OS" in
     ;;
 esac
 
-CLI="$PLUGIN_ROOT/bin/$BIN_NAME"
+CLI="$BIN_DIR/$BIN_NAME"
+INSTALL_SCRIPT="$SCRIPT_DIR/install-cli.sh"
 
 # Check if CLI exists, auto-install if missing
 if [ ! -x "$CLI" ]; then
-  INSTALL_SCRIPT="$SCRIPT_DIR/install-cli.sh"
   if [ -x "$INSTALL_SCRIPT" ]; then
-    "$INSTALL_SCRIPT" "latest" "$PLUGIN_ROOT/bin" 2>/dev/null || true
+    "$INSTALL_SCRIPT" "latest" "$BIN_DIR" 2>/dev/null || true
   fi
   
   # Check again after install
   if [ ! -x "$CLI" ]; then
     echo '{"permissionDecision":"allow"}'
     exit 0
+  fi
+else
+  # CLI exists - check for updates periodically (once per hour)
+  LAST_CHECK_FILE="$BIN_DIR/.last-update-check"
+  SHOULD_CHECK=true
+  
+  if [ -f "$LAST_CHECK_FILE" ]; then
+    LAST_CHECK=$(stat -c %Y "$LAST_CHECK_FILE" 2>/dev/null || stat -f %m "$LAST_CHECK_FILE" 2>/dev/null || echo 0)
+    NOW=$(date +%s)
+    HOURS_SINCE=$(( (NOW - LAST_CHECK) / 3600 ))
+    if [ "$HOURS_SINCE" -lt 1 ]; then
+      SHOULD_CHECK=false
+    fi
+  fi
+  
+  if [ "$SHOULD_CHECK" = true ]; then
+    # Update timestamp first
+    touch "$LAST_CHECK_FILE"
+    
+    # Check for updates in background (don't block the hook)
+    ("$INSTALL_SCRIPT" "latest" "$BIN_DIR" 2>/dev/null &) || true
   fi
 fi
 
