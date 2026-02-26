@@ -566,3 +566,130 @@ func TestMatchToolsArray(t *testing.T) {
 		})
 	}
 }
+
+// TestCommitTriggerFromShellCommand tests that commit triggers fire when a shell command
+// contains git commit and the event has a commit field populated
+func TestCommitTriggerFromShellCommand(t *testing.T) {
+	// This simulates what happens when PowerShell detects "git commit" in a command
+	// and populates both the tool event and commit event
+	workflow := &schema.Workflow{
+		On: schema.OnConfig{
+			Commit: &schema.CommitTrigger{
+				Paths: []string{"src/**/*.go"},
+			},
+		},
+	}
+	matcher := NewMatcher(workflow)
+
+	// Event with both tool (powershell with git commit command) and commit data
+	event := &schema.Event{
+		Tool: &schema.ToolEvent{
+			Name: "powershell",
+			Args: map[string]interface{}{
+				"command": `git commit -m "feat: add feature"`,
+			},
+		},
+		Commit: &schema.CommitEvent{
+			SHA:     "pending",
+			Message: "feat: add feature",
+			Files: []schema.FileStatus{
+				{Path: "src/main.go", Status: "modified"},
+			},
+		},
+	}
+
+	if !matcher.Match(event) {
+		t.Error("Expected commit trigger to match when git commit command detected with matching files")
+	}
+
+	// Event with commit but non-matching files
+	eventNoMatch := &schema.Event{
+		Commit: &schema.CommitEvent{
+			SHA:     "pending",
+			Message: "docs: update readme",
+			Files: []schema.FileStatus{
+				{Path: "README.md", Status: "modified"},
+			},
+		},
+	}
+
+	if matcher.Match(eventNoMatch) {
+		t.Error("Expected commit trigger to NOT match when files don't match path pattern")
+	}
+}
+
+// TestPushTriggerFromShellCommand tests that push triggers fire when a shell command
+// contains git push and the event has a push field populated
+func TestPushTriggerFromShellCommand(t *testing.T) {
+	workflow := &schema.Workflow{
+		On: schema.OnConfig{
+			Push: &schema.PushTrigger{
+				Branches: []string{"main", "release/**"},
+			},
+		},
+	}
+	matcher := NewMatcher(workflow)
+
+	// Event with push to main branch
+	event := &schema.Event{
+		Tool: &schema.ToolEvent{
+			Name: "bash",
+			Args: map[string]interface{}{
+				"command": "git push origin main",
+			},
+		},
+		Push: &schema.PushEvent{
+			Ref:    "refs/heads/main",
+			Before: "0000000000000000000000000000000000000000",
+			After:  "abc123",
+		},
+	}
+
+	if !matcher.Match(event) {
+		t.Error("Expected push trigger to match for main branch")
+	}
+
+	// Event with push to feature branch (not in trigger)
+	eventNoMatch := &schema.Event{
+		Push: &schema.PushEvent{
+			Ref:    "refs/heads/feature/test",
+			Before: "0000000000000000000000000000000000000000",
+			After:  "abc123",
+		},
+	}
+
+	if matcher.Match(eventNoMatch) {
+		t.Error("Expected push trigger to NOT match for feature branch")
+	}
+}
+
+// TestCombinedToolAndCommitEvent tests that both tool and commit triggers can be checked
+func TestCombinedToolAndCommitEvent(t *testing.T) {
+	// Workflow that triggers on tool:powershell
+	workflow := &schema.Workflow{
+		On: schema.OnConfig{
+			Tool: &schema.ToolTrigger{
+				Name: "powershell",
+			},
+		},
+	}
+	matcher := NewMatcher(workflow)
+
+	// Event has both tool and commit - tool trigger should match
+	event := &schema.Event{
+		Tool: &schema.ToolEvent{
+			Name: "powershell",
+			Args: map[string]interface{}{
+				"command": `git commit -m "test"`,
+			},
+		},
+		Commit: &schema.CommitEvent{
+			Message: "test",
+			Files:   []schema.FileStatus{{Path: "test.txt", Status: "added"}},
+		},
+	}
+
+	if !matcher.Match(event) {
+		t.Error("Expected tool trigger to match even when commit data is also present")
+	}
+}
