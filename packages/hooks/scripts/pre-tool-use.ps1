@@ -75,243 +75,25 @@ try {
         Write-Output '{"permissionDecision":"allow"}'
         exit 0
     }
-    $parsed = $rawInput | ConvertFrom-Json
 } catch {
-    # Can't parse input, allow by default
+    # Can't read input, allow by default
     Write-Output '{"permissionDecision":"allow"}'
     exit 0
 }
 
-$toolName = $parsed.toolName
-$sessionCwd = $parsed.cwd
-
-# Handle toolArgs - may be JSON string or object
-$toolArgs = $parsed.toolArgs
-if ($toolArgs -is [string]) {
-    try {
-        $toolArgs = $toolArgs | ConvertFrom-Json
-    } catch {
-        $toolArgs = @{}
-    }
-}
-
-# Convert PSCustomObject to hashtable for proper JSON serialization
-function ConvertTo-Hashtable($obj) {
-    if ($obj -is [System.Collections.IDictionary]) {
-        return $obj
-    }
-    if ($obj -is [PSCustomObject]) {
-        $ht = @{}
-        foreach ($prop in $obj.PSObject.Properties) {
-            $ht[$prop.Name] = ConvertTo-Hashtable $prop.Value
-        }
-        return $ht
-    }
-    return $obj
-}
-
-$toolArgsHt = ConvertTo-Hashtable $toolArgs
-
-# Normalize path to relative path from cwd (Copilot passes absolute paths)
-if ($toolArgsHt.path -and $sessionCwd) {
-    $absPath = $toolArgsHt.path
-    if ([System.IO.Path]::IsPathRooted($absPath)) {
-        $cwdNorm = $sessionCwd -replace '\\', '/'
-        $pathNorm = $absPath -replace '\\', '/'
-        if ($pathNorm.StartsWith($cwdNorm, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $toolArgsHt.path = $pathNorm.Substring($cwdNorm.Length).TrimStart('/')
-        }
-    }
-}
-
-# Detect git commit/push commands in shell tools
-$commitEvent = $null
-$pushEvent = $null
-
-if ($toolName -in @("powershell", "bash", "shell", "cmd")) {
-    $command = $toolArgsHt.command
-    if (-not $command) { $command = $toolArgsHt.script }
-    if (-not $command) { $command = $toolArgsHt.code }
-    
-    if ($command) {
-        # Detect git commit - pattern handles git with flags like -C, --no-pager, etc.
-        if ($command -match 'git\b.*\bcommit\b') {
-            try {
-                Push-Location $sessionCwd
-                
-                # Get staged files
-                $stagedFiles = @()
-                $gitStatus = git diff --cached --name-status 2>$null
-                if ($gitStatus) {
-                    foreach ($line in $gitStatus -split "`n") {
-                        if ($line -match '^([AMDRC])\s+(.+)$') {
-                            $status = switch ($Matches[1]) {
-                                'A' { 'added' }
-                                'M' { 'modified' }
-                                'D' { 'deleted' }
-                                'R' { 'renamed' }
-                                'C' { 'copied' }
-                                default { 'modified' }
-                            }
-                            $stagedFiles += @{ path = $Matches[2]; status = $status }
-                        }
-                    }
-                }
-                
-                # Check if git add is in the command chain (e.g., "git add . && git commit")
-                # If so, parse files from the add command since they won't be staged yet
-                if ($command -match 'git\b.*\badd\b') {
-                    # Extract files/patterns from git add command
-                    # Handles: git add ., git add -A, git add file.ts, git add src/
-                    $addMatches = [regex]::Matches($command, 'git\b[^&|;]*\badd\b\s+([^&|;]+)')
-                    foreach ($addMatch in $addMatches) {
-                        $addArgs = $addMatch.Groups[1].Value.Trim()
-                        
-                        # Handle common git add patterns
-                        if ($addArgs -match '^\.$' -or $addArgs -match '^-A$' -or $addArgs -match '^--all$') {
-                            # git add . or git add -A - get all modified/untracked files
-                            $allChanges = git status --porcelain 2>$null
-                            if ($allChanges) {
-                                foreach ($line in $allChanges -split "`n") {
-                                    if ($line -match '^\s*([MADRCU\?]+)\s+(.+)$') {
-                                        $statusCode = $Matches[1].Trim()
-                                        $filePath = $Matches[2].Trim()
-                                        $status = switch -Regex ($statusCode) {
-                                            'A|\?\?' { 'added' }
-                                            'M' { 'modified' }
-                                            'D' { 'deleted' }
-                                            'R' { 'renamed' }
-                                            default { 'modified' }
-                                        }
-                                        # Only add if not already in staged files
-                                        if (-not ($stagedFiles | Where-Object { $_.path -eq $filePath })) {
-                                            $stagedFiles += @{ path = $filePath; status = $status }
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            # Specific files or patterns - expand them
-                            $filePatterns = $addArgs -split '\s+' | Where-Object { $_ -and $_ -notmatch '^-' }
-                            foreach ($pattern in $filePatterns) {
-                                # Expand glob patterns
-                                $expandedFiles = Get-ChildItem -Path $pattern -Recurse -File -ErrorAction SilentlyContinue | 
-                                    Select-Object -ExpandProperty FullName
-                                if ($expandedFiles) {
-                                    foreach ($file in $expandedFiles) {
-                                        $relPath = $file
-                                        if ([System.IO.Path]::IsPathRooted($file)) {
-                                            $relPath = [System.IO.Path]::GetRelativePath($sessionCwd, $file)
-                                        }
-                                        $relPath = $relPath -replace '\\', '/'
-                                        if (-not ($stagedFiles | Where-Object { $_.path -eq $relPath })) {
-                                            $stagedFiles += @{ path = $relPath; status = 'added' }
-                                        }
-                                    }
-                                } elseif (Test-Path $pattern -ErrorAction SilentlyContinue) {
-                                    # Single file
-                                    $relPath = $pattern -replace '\\', '/'
-                                    if (-not ($stagedFiles | Where-Object { $_.path -eq $relPath })) {
-                                        $stagedFiles += @{ path = $relPath; status = 'added' }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                # Get commit message from command if present
-                $message = ""
-                if ($command -match '-m\s+[''"]([^''"]+)[''"]') {
-                    $message = $Matches[1]
-                } elseif ($command -match '-m\s+(\S+)') {
-                    $message = $Matches[1]
-                }
-                
-                # Get current branch
-                $branch = git rev-parse --abbrev-ref HEAD 2>$null
-                
-                $commitEvent = @{
-                    sha = "pending"
-                    message = $message
-                    author = (git config user.email 2>$null)
-                    branch = $branch
-                    files = $stagedFiles
-                }
-                
-                Pop-Location
-            } catch {
-                if ((Get-Location).Path -ne $sessionCwd) { Pop-Location }
-            }
-        }
-        
-        # Detect git push - pattern handles git with flags like -C, --no-pager, etc.
-        if ($command -match 'git\b.*\bpush\b') {
-            try {
-                Push-Location $sessionCwd
-                
-                # Get current branch
-                $branch = git rev-parse --abbrev-ref HEAD 2>$null
-                $ref = "refs/heads/$branch"
-                
-                # Check if pushing tags
-                if ($command -match 'git\b.*\bpush\b.*--tags\b' -or $command -match 'git\b.*\bpush\b.*\borigin\s+(v[\d\.]+|refs/tags/)') {
-                    if ($command -match 'git\b.*\bpush\b.*\borigin\s+(v[\d\.]+)') {
-                        $ref = "refs/tags/$($Matches[1])"
-                    }
-                }
-                
-                # Get current commit
-                $currentSha = git rev-parse HEAD 2>$null
-                
-                $pushEvent = @{
-                    ref = $ref
-                    before = "0000000000000000000000000000000000000000"
-                    after = $currentSha
-                }
-                
-                Pop-Location
-            } catch {
-                if ((Get-Location).Path -ne $sessionCwd) { Pop-Location }
-            }
-        }
-    }
-}
-
-# Build event JSON for the CLI
-$eventData = @{
-    hook = @{
-        type = "preToolUse"
-        tool = @{
-            name = $toolName
-            args = $toolArgsHt
-        }
-        cwd = $sessionCwd
-    }
-    tool = @{
-        name = $toolName
-        args = $toolArgsHt
-        hook_type = "preToolUse"
-    }
-    cwd = $sessionCwd
-    timestamp = (Get-Date).ToString("o")
-}
-
-# Add commit event if detected
-if ($commitEvent) {
-    $eventData.commit = $commitEvent
-}
-
-# Add push event if detected
-if ($pushEvent) {
-    $eventData.push = $pushEvent
-}
-
-$eventJson = $eventData | ConvertTo-Json -Depth 10 -Compress
-
-# Run agentic-ops CLI
+# Parse input just to get cwd for the CLI
+$sessionCwd = ""
 try {
-    $result = $eventJson | & $CLI run --event - --dir $sessionCwd 2>&1
+    $parsed = $rawInput | ConvertFrom-Json
+    $sessionCwd = $parsed.cwd
+} catch {
+    # Can't parse, try running CLI anyway
+}
+
+# Pass raw input directly to CLI with --raw flag
+# The CLI will detect event types (git commit, push, file changes, etc.)
+try {
+    $result = $rawInput | & $CLI run --raw --dir $sessionCwd 2>&1
     
     # Try to parse result as JSON
     try {
