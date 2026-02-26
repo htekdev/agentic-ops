@@ -50,6 +50,11 @@ $Arch = if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitec
     "amd64"
 }
 
+# Windows ARM can run x64 binaries via emulation - use amd64 as it's more widely available
+if ($OS -eq "windows" -and $Arch -eq "arm64") {
+    $Arch = "amd64"
+}
+
 $Ext = if ($OS -eq "windows") { ".exe" } else { "" }
 
 $BinaryName = "agentic-ops-$OS-$Arch$Ext"
