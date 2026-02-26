@@ -7,17 +7,20 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PluginRoot = (Resolve-Path (Join-Path $ScriptDir "..\..\..")).Path
 
-# Detect OS and select binary
-$BinName = if ($IsWindows -or $env:OS -match "Windows") {
-    "agentic-ops-windows-amd64.exe"
-} elseif ($IsMacOS) {
-    if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -eq "Arm64") {
-        "agentic-ops-darwin-arm64"
-    } else {
-        "agentic-ops-darwin-amd64"
-    }
+# Detect OS and architecture
+$Arch = if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -eq "Arm64") {
+    "arm64"
 } else {
-    "agentic-ops-linux-amd64"
+    "amd64"
+}
+
+# Select binary based on OS
+$BinName = if ($IsWindows -or $env:OS -match "Windows") {
+    "agentic-ops-windows-$Arch.exe"
+} elseif ($IsMacOS) {
+    "agentic-ops-darwin-$Arch"
+} else {
+    "agentic-ops-linux-$Arch"
 }
 
 $CLI = Join-Path (Join-Path $PluginRoot "bin") $BinName
