@@ -134,6 +134,37 @@ if [[ "$TOOL_NAME" == "powershell" ]] || [[ "$TOOL_NAME" == "bash" ]] || [[ "$TO
         fi
       fi
       
+      # Check if git add is in the command chain (e.g., "git add . && git commit")
+      # If so, parse files from the add command since they won't be staged yet
+      if echo "$COMMAND" | grep -qE 'git\b.*\badd\b'; then
+        # Get all modified/untracked files that would be added
+        ALL_CHANGES=$(git status --porcelain 2>/dev/null || echo "")
+        if [ -n "$ALL_CHANGES" ]; then
+          ADD_FILES=$(echo "$ALL_CHANGES" | awk '
+            BEGIN { printf "[" }
+            NR > 1 { printf "," }
+            {
+              status = "modified"
+              code = substr($0, 1, 2)
+              file = substr($0, 4)
+              if (code ~ /A/ || code ~ /\?\?/) status = "added"
+              else if (code ~ /M/) status = "modified"
+              else if (code ~ /D/) status = "deleted"
+              else if (code ~ /R/) status = "renamed"
+              gsub(/"/, "\\\"", file)
+              printf "{\"path\":\"%s\",\"status\":\"%s\"}", file, status
+            }
+            END { printf "]" }
+          ')
+          # Merge with existing staged files
+          if [ "$STAGED_FILES" = "[]" ]; then
+            STAGED_FILES="$ADD_FILES"
+          else
+            STAGED_FILES=$(echo "$STAGED_FILES $ADD_FILES" | jq -s 'add | unique_by(.path)')
+          fi
+        fi
+      fi
+      
       # Get commit message from command
       MESSAGE=""
       if MSG=$(echo "$COMMAND" | grep -oP '(?<=-m\s['\''"])[^'\''"]+(?=['\''"])' 2>/dev/null); then
