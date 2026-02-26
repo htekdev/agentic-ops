@@ -82,6 +82,98 @@ if ($toolArgsHt.path -and $sessionCwd) {
     }
 }
 
+# Detect git commit/push commands in shell tools
+$commitEvent = $null
+$pushEvent = $null
+
+if ($toolName -in @("powershell", "bash", "shell", "cmd")) {
+    $command = $toolArgsHt.command
+    if (-not $command) { $command = $toolArgsHt.script }
+    if (-not $command) { $command = $toolArgsHt.code }
+    
+    if ($command) {
+        # Detect git commit
+        if ($command -match '\bgit\s+(commit|ci)\b') {
+            try {
+                Push-Location $sessionCwd
+                
+                # Get staged files
+                $stagedFiles = @()
+                $gitStatus = git diff --cached --name-status 2>$null
+                if ($gitStatus) {
+                    foreach ($line in $gitStatus -split "`n") {
+                        if ($line -match '^([AMDRC])\s+(.+)$') {
+                            $status = switch ($Matches[1]) {
+                                'A' { 'added' }
+                                'M' { 'modified' }
+                                'D' { 'deleted' }
+                                'R' { 'renamed' }
+                                'C' { 'copied' }
+                                default { 'modified' }
+                            }
+                            $stagedFiles += @{ path = $Matches[2]; status = $status }
+                        }
+                    }
+                }
+                
+                # Get commit message from command if present
+                $message = ""
+                if ($command -match '-m\s+[''"]([^''"]+)[''"]') {
+                    $message = $Matches[1]
+                } elseif ($command -match '-m\s+(\S+)') {
+                    $message = $Matches[1]
+                }
+                
+                # Get current branch
+                $branch = git rev-parse --abbrev-ref HEAD 2>$null
+                
+                $commitEvent = @{
+                    sha = "pending"
+                    message = $message
+                    author = (git config user.email 2>$null)
+                    branch = $branch
+                    files = $stagedFiles
+                }
+                
+                Pop-Location
+            } catch {
+                if ((Get-Location).Path -ne $sessionCwd) { Pop-Location }
+            }
+        }
+        
+        # Detect git push
+        if ($command -match '\bgit\s+push\b') {
+            try {
+                Push-Location $sessionCwd
+                
+                # Get current branch
+                $branch = git rev-parse --abbrev-ref HEAD 2>$null
+                $ref = "refs/heads/$branch"
+                
+                # Check if pushing tags
+                if ($command -match '\bgit\s+push\s+.*--tags\b' -or $command -match '\bgit\s+push\s+origin\s+(v[\d\.]+|refs/tags/)') {
+                    if ($command -match '\bgit\s+push\s+origin\s+(v[\d\.]+)') {
+                        $ref = "refs/tags/$($Matches[1])"
+                    }
+                }
+                
+                # Get current commit
+                $currentSha = git rev-parse HEAD 2>$null
+                
+                $pushEvent = @{
+                    ref = $ref
+                    before = "0000000000000000000000000000000000000000"
+                    after = $currentSha
+                }
+                
+                Pop-Location
+            } catch {
+                if ((Get-Location).Path -ne $sessionCwd) { Pop-Location }
+            }
+        }
+    }
+}
+
 # Build event JSON for the CLI
 $event = @{
     hook = @{
@@ -99,11 +191,23 @@ $event = @{
     }
     cwd = $sessionCwd
     timestamp = (Get-Date).ToString("o")
-} | ConvertTo-Json -Depth 10 -Compress
+}
+
+# Add commit event if detected
+if ($commitEvent) {
+    $event.commit = $commitEvent
+}
+
+# Add push event if detected
+if ($pushEvent) {
+    $event.push = $pushEvent
+}
+
+$eventJson = $event | ConvertTo-Json -Depth 10 -Compress
 
 # Run agentic-ops CLI
 try {
-    $result = $event | & $CLI run --event - --dir $sessionCwd 2>&1
+    $result = $eventJson | & $CLI run --event - --dir $sessionCwd 2>&1
     
     # Try to parse result as JSON
     try {

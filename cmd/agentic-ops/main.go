@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/htekdev/agentic-ops/internal/runner"
@@ -425,4 +426,47 @@ func outputWorkflowResult(result *schema.WorkflowResult) error {
 	}
 	fmt.Println(string(jsonBytes))
 	return nil
+}
+
+// Git command detection helpers
+//
+// These patterns are designed to match git commands at the start of a command line
+// or after command separators (&&, ||, ;), but NOT inside quoted strings like echo "git commit"
+
+var gitCommitPattern = regexp.MustCompile(`(?:^|&&|\|\||;|&)\s*git\s+(commit|ci)\b`)
+var gitPushPattern = regexp.MustCompile(`(?:^|&&|\|\||;|&)\s*git\s+push\b`)
+var commitMessagePattern = regexp.MustCompile(`-m\s+["']([^"']+)["']`)
+var tagPushPattern = regexp.MustCompile(`\bgit\s+push\s+\S+\s+(v[\d.]+)`)
+
+// isGitCommitCommand checks if a shell command contains a git commit
+// It avoids false positives from git commands inside echo strings
+func isGitCommitCommand(command string) bool {
+	return gitCommitPattern.MatchString(command)
+}
+
+// isGitPushCommand checks if a shell command contains a git push
+// It avoids false positives from git commands inside echo strings
+func isGitPushCommand(command string) bool {
+	return gitPushPattern.MatchString(command)
+}
+
+// extractCommitMessage extracts the commit message from a git commit command
+func extractCommitMessage(command string) string {
+	matches := commitMessagePattern.FindStringSubmatch(command)
+	if len(matches) >= 2 {
+		return matches[1]
+	}
+	return ""
+}
+
+// extractPushRef determines the ref being pushed
+func extractPushRef(command string, currentBranch string) string {
+	// Check if pushing a tag
+	matches := tagPushPattern.FindStringSubmatch(command)
+	if len(matches) >= 2 {
+		return "refs/tags/" + matches[1]
+	}
+	
+	// Default to current branch
+	return "refs/heads/" + currentBranch
 }
