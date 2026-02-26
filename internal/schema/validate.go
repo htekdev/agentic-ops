@@ -3,7 +3,6 @@ package schema
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,7 +42,7 @@ func ValidateWorkflow(filePath string) *ValidationResult {
 	}
 
 	// Read the workflow file
-	content, err := ioutil.ReadFile(filePath)
+	content, err := os.ReadFile(filePath)
 	if err != nil {
 		result.Valid = false
 		result.Errors = append(result.Errors, ValidationError{
@@ -185,7 +184,7 @@ func loadSchemaLoader() (gojsonschema.JSONLoader, error) {
 	var lastErr error
 
 	for _, path := range possiblePaths {
-		content, err := ioutil.ReadFile(path)
+		content, err := os.ReadFile(path)
 		if err == nil {
 			schemaContent = content
 			break

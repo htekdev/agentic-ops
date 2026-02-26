@@ -54,7 +54,7 @@ func TestSemaphoreContextCancellation(t *testing.T) {
 
 	// Acquire the only slot
 	ctx := context.Background()
-	sem.Acquire(ctx)
+	_ = sem.Acquire(ctx)
 
 	// Try to acquire with cancelled context
 	cancelCtx, cancel := context.WithCancel(context.Background())
@@ -71,7 +71,7 @@ func TestSemaphoreTimeout(t *testing.T) {
 
 	// Acquire the only slot
 	ctx := context.Background()
-	sem.Acquire(ctx)
+	_ = sem.Acquire(ctx)
 
 	// Try to acquire with timeout
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
