@@ -29,10 +29,18 @@ esac
 
 CLI="$PLUGIN_ROOT/bin/$BIN_NAME"
 
-# Check if CLI exists
+# Check if CLI exists, auto-install if missing
 if [ ! -x "$CLI" ]; then
-  echo '{"permissionDecision":"allow"}'
-  exit 0
+  INSTALL_SCRIPT="$SCRIPT_DIR/install-cli.sh"
+  if [ -x "$INSTALL_SCRIPT" ]; then
+    "$INSTALL_SCRIPT" "latest" "$PLUGIN_ROOT/bin" 2>/dev/null || true
+  fi
+  
+  # Check again after install
+  if [ ! -x "$CLI" ]; then
+    echo '{"permissionDecision":"allow"}'
+    exit 0
+  fi
 fi
 
 # Read input from stdin

@@ -1,8 +1,0 @@
-description: Missing required name field
-
-on:
-  hooks:
-    types:
-      - preToolUse
-
-# Missing steps array

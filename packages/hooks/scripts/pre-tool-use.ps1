@@ -19,11 +19,27 @@ $BinName = if ($IsWindows -or $env:OS -match "Windows") {
 
 $CLI = Join-Path (Join-Path $PluginRoot "bin") $BinName
 
-# Check if CLI exists
+# Check if CLI exists, auto-install if missing
 if (-not (Test-Path $CLI)) {
-    # CLI not built yet, allow by default
-    Write-Output '{"permissionDecision":"allow"}'
-    exit 0
+    try {
+        # Run the install script
+        $InstallScript = Join-Path (Join-Path (Join-Path $PluginRoot "packages") "hooks") "scripts"
+        $InstallScript = Join-Path $InstallScript "install-cli.ps1"
+        if (Test-Path $InstallScript) {
+            & $InstallScript -Version "latest" -DestDir (Join-Path $PluginRoot "bin") 2>&1 | Out-Null
+        }
+    } catch {
+        # Install failed, allow by default
+        Write-Output '{"permissionDecision":"allow"}'
+        exit 0
+    }
+    
+    # Check again after install
+    if (-not (Test-Path $CLI)) {
+        # Still missing, allow by default
+        Write-Output '{"permissionDecision":"allow"}'
+        exit 0
+    }
 }
 
 # Read hook input from stdin
