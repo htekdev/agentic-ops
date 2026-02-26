@@ -134,8 +134,8 @@ if ($toolName -in @("powershell", "bash", "shell", "cmd")) {
     if (-not $command) { $command = $toolArgsHt.code }
     
     if ($command) {
-        # Detect git commit
-        if ($command -match '\bgit\s+(commit|ci)\b') {
+        # Detect git commit - pattern handles git with flags like -C, --no-pager, etc.
+        if ($command -match 'git\b.*\bcommit\b') {
             try {
                 Push-Location $sessionCwd
                 
@@ -183,8 +183,8 @@ if ($toolName -in @("powershell", "bash", "shell", "cmd")) {
             }
         }
         
-        # Detect git push
-        if ($command -match '\bgit\s+push\b') {
+        # Detect git push - pattern handles git with flags like -C, --no-pager, etc.
+        if ($command -match 'git\b.*\bpush\b') {
             try {
                 Push-Location $sessionCwd
                 
@@ -193,8 +193,8 @@ if ($toolName -in @("powershell", "bash", "shell", "cmd")) {
                 $ref = "refs/heads/$branch"
                 
                 # Check if pushing tags
-                if ($command -match '\bgit\s+push\s+.*--tags\b' -or $command -match '\bgit\s+push\s+origin\s+(v[\d\.]+|refs/tags/)') {
-                    if ($command -match '\bgit\s+push\s+origin\s+(v[\d\.]+)') {
+                if ($command -match 'git\b.*\bpush\b.*--tags\b' -or $command -match 'git\b.*\bpush\b.*\borigin\s+(v[\d\.]+|refs/tags/)') {
+                    if ($command -match 'git\b.*\bpush\b.*\borigin\s+(v[\d\.]+)') {
                         $ref = "refs/tags/$($Matches[1])"
                     }
                 }
