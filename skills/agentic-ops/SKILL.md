@@ -123,6 +123,8 @@ on:
 
 Match git commit events:
 
+> **Note:** Copilot only sends `preToolUse` and `postToolUse` hooks. Commit triggers are designed for integration with git hooks (e.g., `pre-commit`, `post-commit`) or manual invocation via `agentic-ops run --event`.
+
 ```yaml
 on:
   commit:
@@ -140,6 +142,8 @@ on:
 #### 5. Push Triggers
 
 Match git push events:
+
+> **Note:** Push triggers require integration with git hooks (e.g., `pre-push`) or manual invocation. They are not automatically triggered by Copilot hooks.
 
 ```yaml
 on:
