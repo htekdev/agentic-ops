@@ -97,7 +97,7 @@ if ($toolArgsHt.path -and $sessionCwd) {
 }
 
 # Build event JSON
-$event = @{
+$eventData = @{
     hook = @{
         type = "postToolUse"
         tool = @{
@@ -117,7 +117,7 @@ $event = @{
 
 # Run agentic-ops CLI
 try {
-    $result = $event | & $CLI run --event - --dir $sessionCwd 2>&1
+    $result = $eventData | & $CLI run --event - --dir $sessionCwd 2>&1
     
     try {
         $resultJson = $result | ConvertFrom-Json
@@ -133,3 +133,4 @@ try {
 }
 
 exit 0
+

@@ -217,7 +217,7 @@ if ($toolName -in @("powershell", "bash", "shell", "cmd")) {
 }
 
 # Build event JSON for the CLI
-$event = @{
+$eventData = @{
     hook = @{
         type = "preToolUse"
         tool = @{
@@ -237,15 +237,15 @@ $event = @{
 
 # Add commit event if detected
 if ($commitEvent) {
-    $event.commit = $commitEvent
+    $eventData.commit = $commitEvent
 }
 
 # Add push event if detected
 if ($pushEvent) {
-    $event.push = $pushEvent
+    $eventData.push = $pushEvent
 }
 
-$eventJson = $event | ConvertTo-Json -Depth 10 -Compress
+$eventJson = $eventData | ConvertTo-Json -Depth 10 -Compress
 
 # Run agentic-ops CLI
 try {
@@ -270,3 +270,4 @@ try {
 }
 
 exit 0
+
