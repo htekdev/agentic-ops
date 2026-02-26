@@ -17,7 +17,7 @@ $BinName = if ($IsWindows -or $env:OS -match "Windows") {
     "agentic-ops-linux-amd64"
 }
 
-$CLI = Join-Path $PluginRoot "bin" $BinName
+$CLI = Join-Path (Join-Path $PluginRoot "bin") $BinName
 
 # Check if CLI exists
 if (-not (Test-Path $CLI)) {
