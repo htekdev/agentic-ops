@@ -201,7 +201,7 @@ func (r *Runner) executeAction(ctx context.Context, actionDir string, metadata *
 
 	case "composite", "node12", "node16", "node20":
 		// Composite action or Node.js-based action
-		if runs.Steps != nil && len(runs.Steps) > 0 {
+		if len(runs.Steps) > 0 {
 			return r.executeCompositeAction(ctx, actionDir, runs.Steps, env)
 		}
 

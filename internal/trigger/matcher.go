@@ -317,10 +317,7 @@ func matchDoubleGlob(pattern, path string) bool {
 
 	// For patterns like **/*.js
 	if parts[0] == "" {
-		suffix := parts[1]
-		if strings.HasPrefix(suffix, "/") {
-			suffix = suffix[1:]
-		}
+		suffix := strings.TrimPrefix(parts[1], "/")
 		// Match suffix against any path segment
 		pathParts := strings.Split(path, "/")
 		for i := range pathParts {
