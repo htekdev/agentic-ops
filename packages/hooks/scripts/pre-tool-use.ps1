@@ -158,6 +158,68 @@ if ($toolName -in @("powershell", "bash", "shell", "cmd")) {
                     }
                 }
                 
+                # Check if git add is in the command chain (e.g., "git add . && git commit")
+                # If so, parse files from the add command since they won't be staged yet
+                if ($command -match 'git\b.*\badd\b') {
+                    # Extract files/patterns from git add command
+                    # Handles: git add ., git add -A, git add file.ts, git add src/
+                    $addMatches = [regex]::Matches($command, 'git\b[^&|;]*\badd\b\s+([^&|;]+)')
+                    foreach ($addMatch in $addMatches) {
+                        $addArgs = $addMatch.Groups[1].Value.Trim()
+                        
+                        # Handle common git add patterns
+                        if ($addArgs -match '^\.$' -or $addArgs -match '^-A$' -or $addArgs -match '^--all$') {
+                            # git add . or git add -A - get all modified/untracked files
+                            $allChanges = git status --porcelain 2>$null
+                            if ($allChanges) {
+                                foreach ($line in $allChanges -split "`n") {
+                                    if ($line -match '^\s*([MADRCU\?]+)\s+(.+)$') {
+                                        $statusCode = $Matches[1].Trim()
+                                        $filePath = $Matches[2].Trim()
+                                        $status = switch -Regex ($statusCode) {
+                                            'A|\?\?' { 'added' }
+                                            'M' { 'modified' }
+                                            'D' { 'deleted' }
+                                            'R' { 'renamed' }
+                                            default { 'modified' }
+                                        }
+                                        # Only add if not already in staged files
+                                        if (-not ($stagedFiles | Where-Object { $_.path -eq $filePath })) {
+                                            $stagedFiles += @{ path = $filePath; status = $status }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            # Specific files or patterns - expand them
+                            $filePatterns = $addArgs -split '\s+' | Where-Object { $_ -and $_ -notmatch '^-' }
+                            foreach ($pattern in $filePatterns) {
+                                # Expand glob patterns
+                                $expandedFiles = Get-ChildItem -Path $pattern -Recurse -File -ErrorAction SilentlyContinue | 
+                                    Select-Object -ExpandProperty FullName
+                                if ($expandedFiles) {
+                                    foreach ($file in $expandedFiles) {
+                                        $relPath = $file
+                                        if ([System.IO.Path]::IsPathRooted($file)) {
+                                            $relPath = [System.IO.Path]::GetRelativePath($sessionCwd, $file)
+                                        }
+                                        $relPath = $relPath -replace '\\', '/'
+                                        if (-not ($stagedFiles | Where-Object { $_.path -eq $relPath })) {
+                                            $stagedFiles += @{ path = $relPath; status = 'added' }
+                                        }
+                                    }
+                                } elseif (Test-Path $pattern -ErrorAction SilentlyContinue) {
+                                    # Single file
+                                    $relPath = $pattern -replace '\\', '/'
+                                    if (-not ($stagedFiles | Where-Object { $_.path -eq $relPath })) {
+                                        $stagedFiles += @{ path = $relPath; status = 'added' }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 # Get commit message from command if present
                 $message = ""
                 if ($command -match '-m\s+[''"]([^''"]+)[''"]') {
