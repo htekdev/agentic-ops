@@ -365,16 +365,18 @@ func matchDoubleGlob(pattern, path string) bool {
 
 // extractBranch extracts branch name from a ref
 func extractBranch(ref string) string {
-	if strings.HasPrefix(ref, "refs/heads/") {
-		return strings.TrimPrefix(ref, "refs/heads/")
+	const prefix = "refs/heads/"
+	if strings.HasPrefix(ref, prefix) {
+		return ref[len(prefix):]
 	}
 	return ""
 }
 
 // extractTag extracts tag name from a ref
 func extractTag(ref string) string {
-	if strings.HasPrefix(ref, "refs/tags/") {
-		return strings.TrimPrefix(ref, "refs/tags/")
+	const prefix = "refs/tags/"
+	if strings.HasPrefix(ref, prefix) {
+		return ref[len(prefix):]
 	}
 	return ""
 }
