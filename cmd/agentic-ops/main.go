@@ -429,18 +429,23 @@ func outputWorkflowResult(result *schema.WorkflowResult) error {
 }
 
 // Git command detection helpers
+//
+// These patterns are designed to match git commands at the start of a command line
+// or after command separators (&&, ||, ;), but NOT inside quoted strings like echo "git commit"
 
-var gitCommitPattern = regexp.MustCompile(`\bgit\s+(commit|ci)\b`)
-var gitPushPattern = regexp.MustCompile(`\bgit\s+push\b`)
+var gitCommitPattern = regexp.MustCompile(`(?:^|&&|\|\||;|&)\s*git\s+(commit|ci)\b`)
+var gitPushPattern = regexp.MustCompile(`(?:^|&&|\|\||;|&)\s*git\s+push\b`)
 var commitMessagePattern = regexp.MustCompile(`-m\s+["']([^"']+)["']`)
 var tagPushPattern = regexp.MustCompile(`\bgit\s+push\s+\S+\s+(v[\d.]+)`)
 
 // isGitCommitCommand checks if a shell command contains a git commit
+// It avoids false positives from git commands inside echo strings
 func isGitCommitCommand(command string) bool {
 	return gitCommitPattern.MatchString(command)
 }
 
 // isGitPushCommand checks if a shell command contains a git push
+// It avoids false positives from git commands inside echo strings
 func isGitPushCommand(command string) bool {
 	return gitPushPattern.MatchString(command)
 }
