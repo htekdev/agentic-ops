@@ -1,0 +1,11 @@
+name: Test Blocking Fail Workflow
+description: A test workflow that fails to verify blocking denial
+blocking: true
+
+on:
+  hooks:
+    types: [preToolUse]
+
+steps:
+  - name: Failing step
+    run: exit 1

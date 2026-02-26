@@ -79,6 +79,20 @@ func (ctx *Context) EvaluateString(input string) (string, error) {
 
 // EvaluateBool evaluates an expression and returns a boolean result
 func (ctx *Context) EvaluateBool(expr string) (bool, error) {
+	// Check if the expression contains the ${{ }} syntax
+	if ContainsExpression(expr) {
+		// Extract the inner expression
+		expressions := ExtractExpressions(expr)
+		if len(expressions) > 0 {
+			result, err := ctx.Evaluate(expressions[0])
+			if err != nil {
+				return false, err
+			}
+			return toBool(result), nil
+		}
+	}
+	
+	// If no ${{ }} syntax, evaluate the expression directly
 	result, err := ctx.Evaluate(expr)
 	if err != nil {
 		return false, err

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"runtime"
@@ -181,6 +182,55 @@ func (r *Runner) Run(ctx context.Context) ([]StepResult, error) {
 	return results, nil
 }
 
+// RunWithBlocking executes all steps and returns a WorkflowResult based on blocking mode
+// If blocking=true and any step fails, returns a deny result
+// If blocking=false, returns an allow result even if steps fail (logs warnings instead)
+func (r *Runner) RunWithBlocking(ctx context.Context) *schema.WorkflowResult {
+	results, err := r.Run(ctx)
+	if err != nil {
+		if r.workflow.IsBlocking() {
+			return schema.NewDenyResult(fmt.Sprintf("workflow execution error: %v", err))
+		}
+		log.Printf("Warning: workflow execution error (non-blocking): %v", err)
+		return schema.NewAllowResult()
+	}
+
+	// Check if any step failed
+	anyStepFailed := false
+	for _, result := range results {
+		if !result.Success {
+			anyStepFailed = true
+			break
+		}
+	}
+
+	// If no failures, always allow
+	if !anyStepFailed {
+		return schema.NewAllowResult()
+	}
+
+	// Steps failed - decision depends on blocking mode
+	if r.workflow.IsBlocking() {
+		// Blocking mode: deny on any failure
+		failedSteps := []string{}
+		for _, result := range results {
+			if !result.Success {
+				failedSteps = append(failedSteps, result.Name)
+			}
+		}
+		reason := fmt.Sprintf("workflow blocked due to step failures: %s", strings.Join(failedSteps, ", "))
+		return schema.NewDenyResult(reason)
+	}
+
+	// Non-blocking mode: log warnings but allow
+	for _, result := range results {
+		if !result.Success {
+			log.Printf("Warning: step '%s' failed (non-blocking): %v", result.Name, result.Error)
+		}
+	}
+	return schema.NewAllowResult()
+}
+
 // runStep executes a single step
 func (r *Runner) runStep(ctx context.Context, step schema.Step, name string) StepResult {
 	start := time.Now()
@@ -307,12 +357,75 @@ func (r *Runner) runCommand(ctx context.Context, step schema.Step, name string, 
 
 // runAction executes a reusable action
 func (r *Runner) runAction(ctx context.Context, step schema.Step, name string, start time.Time) StepResult {
-	// TODO: Implement action execution
-	// For now, return a placeholder
+	// Parse the uses: string
+	parsed, err := parseUsesString(step.Uses)
+	if err != nil {
+		return StepResult{
+			Name:     name,
+			Success:  false,
+			Error:    fmt.Errorf("failed to parse uses: %w", err),
+			Duration: time.Since(start),
+		}
+	}
+
+	// Resolve the action path
+	actionDir, err := r.resolveActionPath(ctx, parsed)
+	if err != nil {
+		return StepResult{
+			Name:     name,
+			Success:  false,
+			Error:    fmt.Errorf("failed to resolve action: %w", err),
+			Duration: time.Since(start),
+		}
+	}
+
+	// Load action metadata
+	metadata, err := loadActionMetadata(actionDir)
+	if err != nil {
+		return StepResult{
+			Name:     name,
+			Success:  false,
+			Error:    fmt.Errorf("failed to load action metadata: %w", err),
+			Duration: time.Since(start),
+		}
+	}
+
+	// Evaluate inputs
+	inputs, err := r.evaluateInputs(step.With)
+	if err != nil {
+		return StepResult{
+			Name:     name,
+			Success:  false,
+			Error:    fmt.Errorf("failed to evaluate inputs: %w", err),
+			Duration: time.Since(start),
+		}
+	}
+
+	// Execute the action
+	output, err := r.executeAction(ctx, actionDir, metadata, inputs)
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return StepResult{
+				Name:     name,
+				Success:  false,
+				Output:   output,
+				Error:    fmt.Errorf("action timed out"),
+				Duration: time.Since(start),
+			}
+		}
+		return StepResult{
+			Name:     name,
+			Success:  false,
+			Output:   output,
+			Error:    err,
+			Duration: time.Since(start),
+		}
+	}
+
 	return StepResult{
 		Name:     name,
-		Success:  false,
-		Error:    fmt.Errorf("uses: actions not yet implemented: %s", step.Uses),
+		Success:  true,
+		Output:   output,
 		Duration: time.Since(start),
 	}
 }
