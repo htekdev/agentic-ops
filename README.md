@@ -1,6 +1,6 @@
 # Agentic-Ops
 
-Local workflow engine for agentic DevOps - execute GitHub Actions-like workflows triggered by Copilot agent hooks.
+A GitHub Copilot CLI plugin for local agent workflow governance. Execute GitHub Actions-like workflows triggered by agent hooks.
 
 ## Overview
 
@@ -13,12 +13,23 @@ Agentic-Ops enables governance for AI agents without sacrificing velocity. Defin
 
 Workflows use a familiar GitHub Actions-like syntax, making it easy to create automated checks, linting, security scans, and approval gates.
 
+## Architecture
+
+This repository contains the **Copilot plugin** that:
+- Registers hooks (`preToolUse`, `postToolUse`) with Copilot CLI
+- Auto-downloads the CLI binary from [agentic-ops-cli](https://github.com/htekdev/agentic-ops-cli) releases
+- Bridges agent events to the CLI for workflow execution
+
+The CLI implementation lives in: [htekdev/agentic-ops-cli](https://github.com/htekdev/agentic-ops-cli)
+
 ## Installation
 
 ```bash
 # Install as a Copilot CLI plugin
 copilot plugin install htekdev/agentic-ops
 ```
+
+The CLI binary will be automatically downloaded on first use.
 
 ## Quick Start
 
@@ -180,18 +191,9 @@ steps:
       fi
 ```
 
-## Development
+## Related Projects
 
-```bash
-# Build
-go build -o bin/agentic-ops ./cmd/agentic-ops
-
-# Test
-go test ./...
-
-# Test with coverage
-go test ./... -coverprofile=coverage.out
-```
+- [agentic-ops-cli](https://github.com/htekdev/agentic-ops-cli) - The CLI that executes workflows
 
 ## License
 
