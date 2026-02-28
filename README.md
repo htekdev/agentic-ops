@@ -1,3 +1,39 @@
+# ⚠️ DEPRECATED - This repository has been renamed
+
+> **This project has been rebranded to `hookflow` and moved to a new location.**
+
+## New Repositories
+
+| Purpose | New Location |
+|---------|--------------|
+| **CLI** | [htekdev/hookflow](https://github.com/htekdev/hookflow) |
+| **Copilot Plugin** | [htekdev/hookflow-gh-copilot-plugin](https://github.com/htekdev/hookflow-gh-copilot-plugin) |
+
+## Migration
+
+If you have `agentic-ops` installed, uninstall and install the new plugin:
+
+```bash
+# Uninstall old plugin
+copilot plugin uninstall htekdev/agentic-ops
+
+# Install new plugin
+copilot plugin install htekdev/hookflow-gh-copilot-plugin
+```
+
+## What Changed?
+
+- **Name**: `agentic-ops` → `hookflow`
+- **Workflow Directory**: `.github/agent-workflows/` → `.github/hooks/`
+- **CLI Binary**: `agentic-ops` → `hookflow`
+
+The syntax and functionality remain the same.
+
+---
+
+<details>
+<summary>📜 Original README (archived)</summary>
+
 # Agentic-Ops
 
 A GitHub Copilot CLI plugin for local agent workflow governance. Execute GitHub Actions-like workflows triggered by agent hooks.
@@ -5,7 +41,6 @@ A GitHub Copilot CLI plugin for local agent workflow governance. Execute GitHub 
 ## Overview
 
 Agentic-Ops enables governance for AI agents without sacrificing velocity. Define workflows that run locally in response to:
-
 - **Agent hooks** (`preToolUse`, `postToolUse`)
 - **File changes** (create, edit)
 - **Git commits**
@@ -13,188 +48,8 @@ Agentic-Ops enables governance for AI agents without sacrificing velocity. Defin
 
 Workflows use a familiar GitHub Actions-like syntax, making it easy to create automated checks, linting, security scans, and approval gates.
 
-## Architecture
-
-This repository contains the **Copilot plugin** that:
-- Registers hooks (`preToolUse`, `postToolUse`) with Copilot CLI
-- Auto-downloads the CLI binary from [agentic-ops-cli](https://github.com/htekdev/agentic-ops-cli) releases
-- Bridges agent events to the CLI for workflow execution
-
-The CLI implementation lives in: [htekdev/agentic-ops-cli](https://github.com/htekdev/agentic-ops-cli)
-
-## Installation
-
-```bash
-# Install as a Copilot CLI plugin
-copilot plugin install htekdev/agentic-ops
-```
-
-The CLI binary will be automatically downloaded on first use.
-
-## Quick Start
-
-Create `.github/agent-workflows/lint.yml`:
-
-```yaml
-name: Lint JavaScript
-description: Run ESLint on JS file edits
-
-on:
-  file:
-    types: [edit]
-    paths: ['**/*.js']
-    paths-ignore: ['node_modules/**']
-
-steps:
-  - name: Run ESLint
-    run: npx eslint "${{ event.file.path }}"
-    continue-on-error: true
-```
-
-## Workflow Syntax
-
-### Triggers
-
-```yaml
-on:
-  # Agent hook events
-  hooks:
-    types: [preToolUse, postToolUse]
-    tools: [edit, create]
-
-  # Specific tool with arg filtering
-  tool:
-    name: edit
-    args:
-      path: '**/*.env*'
-    if: ${{ contains(event.tool.args.path, 'secrets') }}
-
-  # File change events
-  file:
-    types: [create, edit]
-    paths: ['src/**/*.ts']
-    paths-ignore: ['**/*.test.ts']
-
-  # Git commit events
-  commit:
-    paths: ['src/**']
-    branches: [main, 'release/**']
-
-  # Git push events
-  push:
-    branches: [main]
-    tags: ['v*']
-```
-
-### Steps
-
-```yaml
-steps:
-  - name: Step name
-    if: ${{ condition }}
-    run: echo "Hello ${{ event.file.path }}"
-    shell: pwsh  # pwsh, bash, sh, cmd
-    working-directory: ./src
-    timeout: 30
-    continue-on-error: false
-    env:
-      NODE_ENV: test
-```
-
-### Expressions
-
-```yaml
-# Context access
-${{ event.file.path }}
-${{ event.hook.tool.name }}
-${{ env.NODE_ENV }}
-
-# Functions
-${{ contains(path, 'src') }}
-${{ startsWith(path, 'src/') }}
-${{ endsWith(path, '.ts') }}
-${{ format('File: {0}', path) }}
-
-# Operators
-${{ a == b }}
-${{ a && b || c }}
-${{ !condition }}
-```
-
-## Configuration
-
-### Blocking Mode
-
-```yaml
-blocking: true   # Default: stop agent on failure
-blocking: false  # Log warning, allow agent to continue
-```
-
-### Concurrency Control
-
-```yaml
-concurrency:
-  group: lint-${{ event.cwd }}
-  max-parallel: 2
-```
-
-## CLI Usage
-
-```bash
-# Discover workflows
-agentic-ops discover
-
-# Validate workflows
-agentic-ops validate
-
-# Run workflows for an event
-agentic-ops run --event '{"hook":{"type":"preToolUse",...}}'
-
-# Run specific workflow
-agentic-ops run --workflow lint --event '...'
-```
-
-## Examples
-
-### Block Sensitive Files
-
-```yaml
-name: Block Env Edits
-blocking: true
-
-on:
-  tool:
-    name: edit
-    args:
-      path: '**/*.env*'
-
-steps:
-  - run: |
-      echo "Cannot edit environment files"
-      exit 1
-```
-
-### Security Scan
-
-```yaml
-name: Security Scan
-on:
-  file:
-    types: [create]
-    paths: ['**/*.js', '**/*.ts']
-
-steps:
-  - name: Check for secrets
-    run: |
-      if grep -E "(password|secret)" "${{ event.file.path }}"; then
-        exit 1
-      fi
-```
-
-## Related Projects
-
-- [agentic-ops-cli](https://github.com/htekdev/agentic-ops-cli) - The CLI that executes workflows
-
 ## License
 
 MIT
+
+</details>
