@@ -1,0 +1,33 @@
+# Validate JSON files have correct syntax
+name: Validate JSON
+description: Check JSON syntax before files are saved
+
+on:
+  file:
+    paths:
+      - '**/*.json'
+    paths-ignore:
+      - 'node_modules/**'
+      - 'package-lock.json'
+    types:
+      - edit
+      - create
+
+blocking: true
+
+steps:
+  - name: Validate JSON syntax
+    run: |
+      echo "📋 Validating JSON: ${{ event.file.path }}"
+      
+      if cat "${{ event.file.path }}" | jq . > /dev/null 2>&1; then
+        echo "✓ Valid JSON"
+      else
+        echo "❌ Invalid JSON syntax"
+        echo ""
+        echo "Common issues:"
+        echo "  - Trailing commas"
+        echo "  - Missing quotes around keys"
+        echo "  - Unescaped special characters"
+        exit 1
+      fi

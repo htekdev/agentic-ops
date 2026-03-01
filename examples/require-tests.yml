@@ -1,0 +1,35 @@
+# Require test files when source code changes
+name: Require Tests
+description: Ensure source changes include accompanying test files
+
+on:
+  commit:
+    paths:
+      - 'src/**'
+    paths-ignore:
+      - 'src/**/*.test.*'
+      - 'src/**/*.spec.*'
+      - 'src/**/__tests__/**'
+
+blocking: true
+
+steps:
+  - name: Check for test files
+    run: |
+      echo "🧪 Checking for test files in commit..."
+      
+      # Get the list of committed files
+      files="${{ toJSON(event.commit.files) }}"
+      
+      # Check if any test files are included
+      if echo "$files" | grep -qE '\.(test|spec)\.(ts|js|tsx|jsx)'; then
+        echo "✓ Test files found"
+        exit 0
+      fi
+      
+      echo "❌ Source changes require accompanying test files"
+      echo ""
+      echo "Please add tests for your changes:"
+      echo "  - src/foo.ts → src/foo.test.ts"
+      echo "  - src/bar.ts → src/__tests__/bar.test.ts"
+      exit 1

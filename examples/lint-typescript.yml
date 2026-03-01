@@ -1,0 +1,25 @@
+# Run ESLint after TypeScript file edits
+name: Lint TypeScript
+description: Automatically lint TypeScript files after edits
+
+on:
+  file:
+    lifecycle: post
+    paths:
+      - '**/*.ts'
+      - '**/*.tsx'
+    paths-ignore:
+      - 'node_modules/**'
+      - 'dist/**'
+      - '**/*.d.ts'
+    types:
+      - edit
+
+blocking: false  # Report issues but don't block the agent
+
+steps:
+  - name: Run ESLint
+    run: |
+      echo "🔍 Linting ${{ event.file.path }}..."
+      npx eslint "${{ event.file.path }}" --fix
+      echo "✓ Lint complete"
