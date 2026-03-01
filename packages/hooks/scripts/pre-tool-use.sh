@@ -6,65 +6,76 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 BIN_DIR="$PLUGIN_ROOT/bin"
 
-# Detect OS and architecture
-OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-ARCH="$(uname -m)"
+# Priority 1: Check if agentic-ops is installed globally (in PATH)
+CLI=""
+if command -v agentic-ops &> /dev/null; then
+    CLI="agentic-ops"
+fi
 
-case "$OS" in
-  darwin)
-    case "$ARCH" in
-      arm64|aarch64) BIN_NAME="agentic-ops-darwin-arm64" ;;
-      *) BIN_NAME="agentic-ops-darwin-amd64" ;;
+# Priority 2: Fall back to bundled binary
+if [ -z "$CLI" ]; then
+    # Detect OS and architecture
+    OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    ARCH="$(uname -m)"
+
+    case "$OS" in
+      darwin)
+        case "$ARCH" in
+          arm64|aarch64) BIN_NAME="agentic-ops-darwin-arm64" ;;
+          *) BIN_NAME="agentic-ops-darwin-amd64" ;;
+        esac
+        ;;
+      linux)
+        case "$ARCH" in
+          arm64|aarch64) BIN_NAME="agentic-ops-linux-arm64" ;;
+          *) BIN_NAME="agentic-ops-linux-amd64" ;;
+        esac
+        ;;
+      *)
+        # Unknown OS, allow by default
+        echo '{"permissionDecision":"allow"}'
+        exit 0
+        ;;
     esac
-    ;;
-  linux)
-    case "$ARCH" in
-      arm64|aarch64) BIN_NAME="agentic-ops-linux-arm64" ;;
-      *) BIN_NAME="agentic-ops-linux-amd64" ;;
-    esac
-    ;;
-  *)
-    # Unknown OS, allow by default
-    echo '{"permissionDecision":"allow"}'
-    exit 0
-    ;;
-esac
 
-CLI="$BIN_DIR/$BIN_NAME"
-INSTALL_SCRIPT="$SCRIPT_DIR/install-cli.sh"
+    BUNDLED_CLI="$BIN_DIR/$BIN_NAME"
+    INSTALL_SCRIPT="$SCRIPT_DIR/install-cli.sh"
 
-# Check if CLI exists, auto-install if missing
-if [ ! -x "$CLI" ]; then
-  if [ -x "$INSTALL_SCRIPT" ]; then
-    "$INSTALL_SCRIPT" "latest" "$BIN_DIR" 2>/dev/null || true
-  fi
-  
-  # Check again after install
-  if [ ! -x "$CLI" ]; then
-    echo '{"permissionDecision":"allow"}'
-    exit 0
-  fi
-else
-  # CLI exists - check for updates periodically (once per hour)
-  LAST_CHECK_FILE="$BIN_DIR/.last-update-check"
-  SHOULD_CHECK=true
-  
-  if [ -f "$LAST_CHECK_FILE" ]; then
-    LAST_CHECK=$(stat -c %Y "$LAST_CHECK_FILE" 2>/dev/null || stat -f %m "$LAST_CHECK_FILE" 2>/dev/null || echo 0)
-    NOW=$(date +%s)
-    HOURS_SINCE=$(( (NOW - LAST_CHECK) / 3600 ))
-    if [ "$HOURS_SINCE" -lt 1 ]; then
-      SHOULD_CHECK=false
+    # Check if bundled CLI exists, auto-install if missing
+    if [ ! -x "$BUNDLED_CLI" ]; then
+      if [ -x "$INSTALL_SCRIPT" ]; then
+        "$INSTALL_SCRIPT" "latest" "$BIN_DIR" 2>/dev/null || true
+      fi
+      
+      # Check again after install
+      if [ ! -x "$BUNDLED_CLI" ]; then
+        echo '{"permissionDecision":"allow"}'
+        exit 0
+      fi
+    else
+      # CLI exists - check for updates periodically (once per hour)
+      LAST_CHECK_FILE="$BIN_DIR/.last-update-check"
+      SHOULD_CHECK=true
+      
+      if [ -f "$LAST_CHECK_FILE" ]; then
+        LAST_CHECK=$(stat -c %Y "$LAST_CHECK_FILE" 2>/dev/null || stat -f %m "$LAST_CHECK_FILE" 2>/dev/null || echo 0)
+        NOW=$(date +%s)
+        HOURS_SINCE=$(( (NOW - LAST_CHECK) / 3600 ))
+        if [ "$HOURS_SINCE" -lt 1 ]; then
+          SHOULD_CHECK=false
+        fi
+      fi
+      
+      if [ "$SHOULD_CHECK" = true ]; then
+        # Update timestamp first
+        touch "$LAST_CHECK_FILE"
+        
+        # Check for updates in background (don't block the hook)
+        ("$INSTALL_SCRIPT" "latest" "$BIN_DIR" 2>/dev/null &) || true
+      fi
     fi
-  fi
-  
-  if [ "$SHOULD_CHECK" = true ]; then
-    # Update timestamp first
-    touch "$LAST_CHECK_FILE"
     
-    # Check for updates in background (don't block the hook)
-    ("$INSTALL_SCRIPT" "latest" "$BIN_DIR" 2>/dev/null &) || true
-  fi
+    CLI="$BUNDLED_CLI"
 fi
 
 # Read input from stdin
